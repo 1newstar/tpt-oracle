@@ -17,6 +17,14 @@
 --     @dash_wait_chains username||':'||program2||event2 session_type='FOREGROUND' sysdate-1 sysdate
 --
 -- Other:
+--
+--     The this "*2.sql" script is different from normal dash_wait_chains.sql
+--     as it doesnt walk samples by sample_id but by actual sample time
+--     truncated to 10-second precision. This is needed as in RAC different instances
+--     will likely have different sample_id (due to RAC node restarts etc) and
+--     clock drift etc. As long as your RAC instances have properly synchronized
+--     system clocks, this script will still show correct enough results.
+--
 --     This script uses only the DBA_HIST_ACTIVE_SESS_HISTORY view, use
 --     @ash_wait_chains.sql for accessiong the V$ ASH view
 --              
@@ -31,6 +39,7 @@ WITH
 bclass AS (SELECT class, ROWNUM r from v$waitstat),
 ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
             a.*
+          , SUBSTR(TO_CHAR(a.sample_time, 'YYYYMMDDHH24MISS'),1,13) sample_time_10s -- ASH dba_hist_ samples stored every 10sec
           , u.username
           , CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
               REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
@@ -50,11 +59,11 @@ ash AS (SELECT /*+ QB_NAME(ash) LEADING(a) USE_HASH(u) SWAP_JOIN_INPUTS(u) */
             a.user_id = u.user_id (+)
         AND sample_time BETWEEN &3 AND &4
     ),
-ash_samples AS (SELECT DISTINCT sample_id FROM ash),
-ash_data AS (SELECT /*+ MATERIALIZE */ * FROM ash),
+ash_samples AS (SELECT DISTINCT sample_time_10s FROM ash),
+ash_data AS (SELECT * FROM ash),
 chains AS (
     SELECT
-        sample_time ts
+        d.sample_time_10s ts
       , level lvl
       , session_id sid
       , REPLACE(SYS_CONNECT_BY_PATH(&1, '->'), '->', ' -> ')||CASE WHEN CONNECT_BY_ISLEAF = 1 AND d.blocking_session IS NOT NULL THEN ' -> [idle blocker '||d.blocking_inst_id||','||d.blocking_session||','||d.blocking_session_serial#||(SELECT ' ('||s.program||')' FROM gv$session s WHERE (s.inst_id, s.sid , s.serial#) = ((d.blocking_inst_id,d.blocking_session,d.blocking_session_serial#)))||']' ELSE NULL END path -- there's a reason why I'm doing this 
@@ -69,11 +78,11 @@ chains AS (
         ash_samples s
       , ash_data d
     WHERE
-        s.sample_id = d.sample_id 
+        s.sample_time_10s = d.sample_time_10s 
     AND d.sample_time BETWEEN &3 AND &4
     CONNECT BY NOCYCLE
         (    PRIOR d.blocking_session = d.session_id
-         AND PRIOR s.sample_id = d.sample_id
+         AND PRIOR s.sample_time_10s = d.sample_time_10s
          AND PRIOR d.blocking_inst_id = d.instance_number)
     START WITH &2
 )
