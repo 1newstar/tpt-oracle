@@ -17,7 +17,7 @@
 -- Usage:       @dasqlmon <sqlid> <plan_hash_value> <from_time> <to_time>
 --
 -- Notes:       This script runs on Oracle 11g+ and you should have the
---              Diagnostics and Tuning pack licenses for using it as it queries
+--              Diagnostics license for using it as it queries
 --              some separately licensed views.
 --
 ------------------------------------------------------------------------------------------------------------------------
@@ -30,7 +30,7 @@ COL options   FOR a30
 
 COL asqlmon_plan_hash_value HEAD PLAN_HASH_VALUE
 COL asqlmon_sql_id          HEAD SQL_ID  NOPRINT
-COL asqlmon_sql_child       HEAD CHILD#  NOPRINT
+COL asqlmon_sql_child       HEAD "CHILD"  PRINT
 COL asqlmon_sample_time     HEAD SAMPLE_HOUR
 COL projection FOR A520
 

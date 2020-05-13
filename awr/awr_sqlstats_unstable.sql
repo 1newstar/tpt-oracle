@@ -10,6 +10,8 @@
 -- a) typical use - show SQL_IDs from last 2 weeks that have different plans with different
 --                  elapsed time per execution (per plan)
 -- 
+--   @awr/awr_sqlstats_unstable sql_id plan_hash_value sysdate-14 sysdate
+--
 -- b) special case use with SQL using literals (note that AWR may not persist many of these queries)
 --    as due to literals these tend to be executed only once
 --
@@ -40,17 +42,16 @@ WITH metrics AS(
       , MIN(CAST(begin_interval_time AS DATE)) first_seen
       , MAX(CAST(end_interval_time   AS DATE)) last_seen
       , SUM(executions_delta)     executions
-      --, ROUND(SUM(elapsed_time_delta  ) / NULLIF(SUM(executions_delta),0)) ela_us_per_exec
       , ROUND(SUM(elapsed_time_delta  ) / CASE WHEN SUM(executions_delta) = 0 THEN 1 ELSE SUM(executions_delta) END) ela_us_per_exec
-      , ROUND(SUM(cpu_time_delta      ) / NULLIF(SUM(executions_delta),0)) cpu_us_per_exec
+      , ROUND(SUM(cpu_time_delta      ) / NULLIF(SUM(executions_delta),0))      cpu_us_per_exec
       , ROUND(SUM(rows_processed_delta) / NULLIF(SUM(executions_delta),0),1)    rows_per_exec
       , ROUND(SUM(buffer_gets_delta   ) / NULLIF(SUM(executions_delta),0),1)    lios_per_exec
       , ROUND(SUM(disk_reads_delta    ) / NULLIF(SUM(executions_delta),0),1)    blkrd_per_exec
-      , ROUND(SUM(iowait_delta        ) / NULLIF(SUM(executions_delta),0)) iow_us_per_exec
+      , ROUND(SUM(iowait_delta        ) / NULLIF(SUM(executions_delta),0))      iow_us_per_exec
       , ROUND(SUM(iowait_delta        ) / NULLIF(SUM(physical_read_requests_delta)+SUM(physical_write_requests_delta),0),1) avg_iow_us
-      , ROUND(SUM(clwait_delta        ) / NULLIF(SUM(executions_delta),0)) clw_us_per_exec
-      , ROUND(SUM(apwait_delta        ) / NULLIF(SUM(executions_delta),0)) apw_us_per_exec
-      , ROUND(SUM(ccwait_delta        ) / NULLIF(SUM(executions_delta),0)) ccw_us_per_exec
+      , ROUND(SUM(clwait_delta        ) / NULLIF(SUM(executions_delta),0))      clw_us_per_exec
+      , ROUND(SUM(apwait_delta        ) / NULLIF(SUM(executions_delta),0))      apw_us_per_exec
+      , ROUND(SUM(ccwait_delta        ) / NULLIF(SUM(executions_delta),0))      ccw_us_per_exec
     FROM
         dba_hist_snapshot sn
       , dba_hist_sqlstat st
@@ -77,11 +78,11 @@ WITH metrics AS(
 ), norm AS (
     SELECT
         &1
-      , SUM(executions)        total_executions
-      , MIN(ela_us_per_exec) / 1000000  min_s_per_exec
-      , MAX(ela_us_per_exec) / 1000000  max_s_per_exec
-      , ela_us_stddev / MIN(ela_us_per_exec) ela_norm_stddev
-      , ela_us_stddev / 1000000 seconds_stddev
+      , SUM(executions)                             total_executions
+      , MIN(ela_us_per_exec) / 1000000              min_s_per_exec
+      , MAX(ela_us_per_exec) / 1000000              max_s_per_exec
+      , ela_us_stddev        / MIN(ela_us_per_exec) ela_norm_stddev
+      , ela_us_stddev        / 1000000              seconds_stddev
     FROM
     		sq
     GROUP BY
@@ -94,7 +95,7 @@ FROM
 		norm
 WHERE
     ela_norm_stddev > 3
-AND max_s_per_exec  > 1
+AND max_s_per_exec  > 1  -- avoid reporting very short queries
 ORDER BY
     ela_norm_stddev DESC
 /
